@@ -130,10 +130,10 @@ void SnMultiMeterMeasureSel(WORD wANAch, int nInOutSel, int nVISel, int nLoadSel
 
 //基板電源・CPLD選択・E8A接続/切断・HLS通信ライン接続/断線切り替え(リレー制御)
 void SnRelayOutputBit(int nBitSelect, WORD wData);		//1bitのみ切り替え可能版
-void SnRelayOutputAllBit(WORD wPcbPwr, WORD wCpldSel, WORD wE8aCon, WORD wHlsCon);	//全bit同時切り替え可能版
+void SnRelayOutputAllBit(WORD wPcbPwr, WORD wCpldSel, WORD wTst4En, WORD wE8aCon, WORD wHlsCon);	//全bit同時切り替え可能版
 
 //基板の電源再投入
-void PcbPwrReBoot();
+void PcbPwrReBoot(BOOL bRsMode);
 
 void LogFolderCreate();
 void LogPrintf(const char * Format, ...);
@@ -784,8 +784,8 @@ BOOL SPxxxxSequenceTest(int nInsStartID, int nInsEndID)
 		}
 		system("cls");		//画面クリア
 	
-		//検査前の初期リレー出力（基板電源ON、CPLD(CN101側)に切り替え、E8A接続断、HLS接続）
-		SnRelayOutputAllBit(1, 0, 0, 1);
+		//検査前の初期リレー出力（基板電源ON、CPLD(CN101側)に切り替え、TST4端子出力、E8A接続断、HLS接続）
+		SnRelayOutputAllBit(1, 0, 0, 0, 1);
 
 		switch(ii){
 		case (int)'1':		//電源電圧確認
@@ -804,7 +804,7 @@ BOOL SPxxxxSequenceTest(int nInsStartID, int nInsEndID)
 			break;
 		case (int)'5':		//ボードID設定
 			RS_SpComOpen();		//RS232C通信ポートをオープンする
-			PcbPwrReBoot();		//検査基板を再起動する
+			PcbPwrReBoot(TRUE);		//検査基板を再起動する
 			bErr = SPxxxxBIDSetting(ii);
 			break;
 		case (int)'6':		//HLS通信テスト(NET1コネクタ側)
@@ -832,14 +832,14 @@ BOOL SPxxxxSequenceTest(int nInsStartID, int nInsEndID)
 				m_nSPxxxxBoardID == SP_BID_FRONT_IF_BOARD ||
 				m_nSPxxxxBoardID == SP_BID_MOTHER_BOARD ){
 				RS_SpComOpen();		//RS232C通信ポートをオープンする
-				PcbPwrReBoot();		//検査基板を再起動する
+				PcbPwrReBoot(TRUE);		//検査基板を再起動する
 				bErr = SPxxxxAdInAdj(ii, -1, -1);
 			}
 			break;
 		case (int)'B':		//アナログ出力調整
 			if( m_nSPxxxxBoardID == SP_BID_UPPER_IF_BOARD ){
 				RS_SpComOpen();		//RS232C通信ポートをオープンする
-				PcbPwrReBoot();		//検査基板を再起動する
+				PcbPwrReBoot(TRUE);		//検査基板を再起動する
 				//bErr = SPxxxxDaOutAdj		//SPIN_MOTHERでは使用しないので後まわし
 			}
 			break;
@@ -892,7 +892,7 @@ BOOL SPxxxxSequenceTest(int nInsStartID, int nInsEndID)
 		if( m_hSpComHandle != INVALID_HANDLE_VALUE ){
 			CloseHandle(m_hSpComHandle);
 			m_hSpComHandle = INVALID_HANDLE_VALUE;
-			PcbPwrReBoot();		//検査基板を再起動する
+			PcbPwrReBoot(FALSE);		//検査基板を再起動する
 		}
 	}	//for end
 
@@ -1028,6 +1028,7 @@ void SPxxxxTestSelectMenu()
 //基板電源・CPLD選択・E8A接続/切断・HLS通信ライン接続/断線切り替え(リレー制御)
 #define	BIT_SEL_PCBPWR_CTRL		(8)
 #define	BIT_SEL_CPLDSEL_CTRL	(9)
+#define	BIT_SEL_TST4_CTRL		(13)
 #define	BIT_SEL_E8ACON_CTRL		(14)
 #define	BIT_SEL_HLSCON_CTRL		(15)
 
@@ -1044,6 +1045,9 @@ void SnRelayOutputBit(int nBitSelect, WORD wData)
 			break;
 		case BIT_SEL_CPLDSEL_CTRL:
 			m_snTestCtrlBit.BIT.B09_CPLD_SEL = wData;
+			break;
+		case BIT_SEL_TST4_CTRL:
+			m_snTestCtrlBit.BIT.B13_TST4 = wData;
 			break;
 		case BIT_SEL_E8ACON_CTRL:
 			m_snTestCtrlBit.BIT.B14_E8A_CONNECT = wData;
@@ -1066,7 +1070,8 @@ void SnRelayOutputBit(int nBitSelect, WORD wData)
 		}
 	}
 }
-void SnRelayOutputAllBit(WORD wPcbPwr, WORD wCpldSel, WORD wE8aCon, WORD wHlsCon)
+//0：該当bit OFF、1：該当bit ON、0/1以外：該当bitの切替なし
+void SnRelayOutputAllBit(WORD wPcbPwr, WORD wCpldSel, WORD wTst4En, WORD wE8aCon, WORD wHlsCon)
 {
 	DWORD	err;
 
@@ -1076,6 +1081,9 @@ void SnRelayOutputAllBit(WORD wPcbPwr, WORD wCpldSel, WORD wE8aCon, WORD wHlsCon
 		}
 		if( wCpldSel <= 1 ){ 
 			m_snTestCtrlBit.BIT.B09_CPLD_SEL = wCpldSel;
+		}
+		if( wTst4En <= 1 ){
+			m_snTestCtrlBit.BIT.B13_TST4 = wTst4En;
 		}
 		if( wE8aCon <= 1 ){ 
 			m_snTestCtrlBit.BIT.B14_E8A_CONNECT = wE8aCon;
@@ -1097,9 +1105,18 @@ void SnRelayOutputAllBit(WORD wPcbPwr, WORD wCpldSel, WORD wE8aCon, WORD wHlsCon
 
 ////////////////////////////
 //検査基板の電源再投入
-void PcbPwrReBoot()
+// bRsModeにTRUE指定時は、TST4端子をON（RS-232C通信モード）でMPUを起動する
+void PcbPwrReBoot(BOOL bRsMode)
 {
 	SnRelayOutputBit(BIT_SEL_PCBPWR_CTRL, 0);	//電源OFF
+	if( bRsMode == TRUE ){
+		//基板電源OFF、CPLD(CN101側)[切替なし]、TST4端子出力ON、E8A接続[切替なし]、HLS接続[切替なし]
+		SnRelayOutputAllBit(0, 0xffff, 1, 0xffff, 0xffff);
+	}
+	else{
+		//基板電源OFF、CPLD(CN101側)[切替なし]、TST4端子出力OFF、E8A接続[切替なし]、HLS接続[切替なし]
+		SnRelayOutputAllBit(0, 0xffff, 0, 0xffff, 0xffff);
+	}
 	Sleep_Cnt(500);	//少し待つ
 	SnRelayOutputBit(BIT_SEL_PCBPWR_CTRL, 1);	//電源ON
 	Sleep_Cnt(500);	//少し待つ
